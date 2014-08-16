@@ -1,6 +1,7 @@
 import hashlib
 import binascii
 import random
+import time
 rng = random.SystemRandom()
         
 def init_key_generation(keylengthbits):
@@ -237,7 +238,8 @@ def encrypt_file_2(filename, masterpassword):
     times_to_iterate = file_length / 128
     times_to_iterate_total = times_to_iterate
     current_key = masterkey
-    current_plaintext_hash_feedback = hashlib.sha512(iv).hexdigest()
+    iv_hash = hashlib.sha512(iv).hexdigest()
+    current_plaintext_hash_feedback = binascii.hexlify(hashlib.pbkdf2_hmac('sha512', masterkey, iv_hash, 100000))
     chunk_list = []
     while times_to_iterate > 0:
         #print "START KEY: ", current_key
@@ -281,7 +283,8 @@ def decrypt_file_2(filename, testmode, decryption_master_key, decryption_length,
     times_to_iterate_decrypt = len(file_to_decrypt_hex) / 128
     times_to_iterate_decrypt_total = times_to_iterate_decrypt
     current_key_decrypt = decryption_master_key
-    current_plaintext_hash_feedback_decipher = hashlib.sha512(decryption_iv).hexdigest()
+    decryption_iv_hash = hashlib.sha512(decryption_iv).hexdigest()
+    current_plaintext_hash_feedback_decipher = binascii.hexlify(hashlib.pbkdf2_hmac('sha512', decryption_master_key, decryption_iv_hash, 100000))
     chunk_list_decrypt = []
     while times_to_iterate_decrypt > 0:
         current_key_decrypt, current_key_to_xor_decrypt = advance_cipher_2(current_key_decrypt, current_plaintext_hash_feedback_decipher)
@@ -308,13 +311,16 @@ def decrypt_file_2(filename, testmode, decryption_master_key, decryption_length,
     else:
         return "Wrong key, corrupted file or not a valid container"
 
+print "Encryption Test Program r1.1"
+print "by fabrizziop"
+print "MIT licence"
 what_to_do = int(raw_input("1: Encrypt, 2: Decrypt , 3: Change Password: "))
 if what_to_do == 1:
     mpas = str(raw_input("Master Password: "))
     fnm = str(raw_input("File Name: "))
     print "Methods:"
     print "1: SHA512 stream, transpose, SHA512 again, then XOR"
-    print "2: SHA512 stream, transpose, append SHA512 of plaintext chunk, SHA512 again, then XOR"
+    print "2: SHA512 stream, transpose, append transposed SHA512 of plaintext chunk, SHA512 again, then XOR"
     method = int(raw_input("Pick a method: "))
     if method == 1:
         print encrypt_file_1(fnm, mpas)
@@ -328,7 +334,7 @@ elif what_to_do == 2:
         print "Method: SHA512 stream, transpose, SHA512 again, then XOR"
         print decrypt_file_1(fnm, False, dmk, dl)
     elif dv == 2:
-        print "Method: SHA512 stream, transpose, append SHA512 of plaintext chunk, SHA512 again, then XOR"
+        print "Method: SHA512 stream, transpose, append transposed SHA512 of plaintext chunk, SHA512 again, then XOR"
         print decrypt_file_2(fnm, False, dmk, dl, dciv)
     else:
         print "FILE NOT COMPATIBLE"
@@ -337,3 +343,4 @@ elif what_to_do == 3:
     npas = str(raw_input("New Password: "))
     fnm = str(raw_input("File Name: "))
     print edit_header_file(opas, npas, fnm)
+time.sleep(3)
