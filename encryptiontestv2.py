@@ -2,6 +2,7 @@ import hashlib
 import binascii
 import random
 import time
+from Crypto.Cipher import AES
 rng = random.SystemRandom()
         
 def init_key_generation(keylengthbits):
@@ -310,8 +311,103 @@ def decrypt_file_2(filename, testmode, decryption_master_key, decryption_length,
         return "File decrypted, checksum OK"
     else:
         return "Wrong key, corrupted file or not a valid container"
+        
+def encrypt_file_3(filename, masterpassword):
+    output_filename = filename + ".crypt"
+    file_to_encrypt = open(filename, "rb")
+    file_to_output = open(output_filename, "wb")
+    file_to_output_hex = ""
+    startlen = 0
+    file_to_encrypt_bin = file_to_encrypt.read()
+    file_to_encrypt_hex = binascii.hexlify(file_to_encrypt_bin)
+    file_length = len(file_to_encrypt_hex)
+    masterkey, iv = generate_header_file(masterpassword, file_length, filename, 3)
+    file_padding = 32 - (file_length % 32)
+    while file_padding > 0:
+        if file_padding >= 2:
+            file_to_encrypt_hex += format(rng.randint(0,255), '02x')
+            file_padding -= 2
+        else:
+            file_to_encrypt_hex += "0"
+            file_padding -= 1
+    file_checksum = hashlib.sha512(file_to_encrypt_hex[0:file_length]).hexdigest()
+    file_to_encrypt_hex += file_checksum
+    file_length = len(file_to_encrypt_hex)
+    file_to_encrypt.close()
+    print "Times to iterate (W/chk): " + str(file_length / 32)
+    print "Encrypted file checksum: ", file_checksum
+    times_to_iterate = file_length / 32
+    times_to_iterate_total = times_to_iterate
+    current_key = hashlib.sha256(masterkey).digest()
+    iv_hash = hashlib.sha512(iv+masterkey).hexdigest()
+    real_iv_to_use = binascii.hexlify(hashlib.pbkdf2_hmac('sha512', masterkey, iv_hash, 100000))
+    real_iv_to_use = binascii.unhexlify(real_iv_to_use[:32])
+    cipher = AES.new(current_key, AES.MODE_CBC, real_iv_to_use)
+    chunk_list = []
+    while times_to_iterate > 0:
+        current_plaintext_chunk = binascii.unhexlify(file_to_encrypt_hex[startlen:startlen+32])
+        chunk_list.append(binascii.hexlify(cipher.encrypt(current_plaintext_chunk)))
+        startlen += 32
+        times_to_iterate -= 1
+        if times_to_iterate % 15000 == 0:
+            print "Encryption Progress: ", (times_to_iterate_total - times_to_iterate) / float(times_to_iterate_total) * 100.0, "%"
+    #print file_to_output_hex
+    file_to_output_hex = "".join(chunk_list)
+    file_to_output.write(binascii.unhexlify(file_to_output_hex))
+    file_to_output.close()
+    dtk, dtl, dtv, div = read_header_file(masterpassword, filename)
+    if dtv == 3:
+        is_correct = decrypt_file_3(filename, True, dtk, dtl, div)
+        if is_correct == "File decrypted, checksum OK":
+            return "Encryption Done and Verified"
+        else:
+            return "ERROR!"
+    else:
+        return "BAD HEADER ERROR!"
+        
+def decrypt_file_3(filename, testmode, decryption_master_key, decryption_length, decryption_iv):
+    filename_to_decrypt = filename + ".crypt"
+    file_to_decrypt = open(filename_to_decrypt, "rb")
+    file_to_decrypt_bin = file_to_decrypt.read()
+    file_to_decrypt_hex = binascii.hexlify(file_to_decrypt_bin)
+    file_to_decrypt.close()
+    file_to_decrypt_output_hex = ""
+    real_file_to_decrypt_output_hex = ""
+    decrypt_checksum = ""
+    checksum_ok = False
+    startlen_decrypt = 0
+    times_to_iterate_decrypt = len(file_to_decrypt_hex) / 32
+    times_to_iterate_decrypt_total = times_to_iterate_decrypt
+    current_key = hashlib.sha256(decryption_master_key).digest()
+    iv_hash = hashlib.sha512(decryption_iv+decryption_master_key).hexdigest()
+    real_iv_to_use = binascii.hexlify(hashlib.pbkdf2_hmac('sha512', decryption_master_key, iv_hash, 100000))
+    real_iv_to_use = binascii.unhexlify(real_iv_to_use[:32])
+    cipher = AES.new(current_key, AES.MODE_CBC, real_iv_to_use)
+    chunk_list_decrypt = []
+    while times_to_iterate_decrypt > 0:
+        current_deciphered_chunk = cipher.decrypt(binascii.unhexlify(file_to_decrypt_hex[startlen_decrypt:startlen_decrypt+32]))
+        chunk_list_decrypt.append(binascii.hexlify(current_deciphered_chunk))
+        startlen_decrypt += 32
+        times_to_iterate_decrypt -= 1
+        if times_to_iterate_decrypt % 15000 == 0:
+            print "Decryption Progress: ", (times_to_iterate_decrypt_total - times_to_iterate_decrypt) / float(times_to_iterate_decrypt_total) * 100.0, "%"
+    file_to_decrypt_output_hex = "".join(chunk_list_decrypt)
+    decrypt_checksum = file_to_decrypt_output_hex[-128:]
+    real_file_to_decrypt_output_hex = file_to_decrypt_output_hex[0:int(decryption_length)]
+    print "Decrypted file checksum (read): ", decrypt_checksum
+    print "Decrypted file checksum (calculated): ", hashlib.sha512(real_file_to_decrypt_output_hex).hexdigest()
+    if decrypt_checksum == hashlib.sha512(real_file_to_decrypt_output_hex).hexdigest():
+        checksum_ok = True
+    if testmode == False:
+        file_to_decrypt_output = open(filename, "wb")
+        file_to_decrypt_output.write(binascii.unhexlify(real_file_to_decrypt_output_hex))
+        file_to_decrypt_output.close()
+    if checksum_ok == True:
+        return "File decrypted, checksum OK"
+    else:
+        return "Wrong key, corrupted file or not a valid container"
 
-print "Encryption Test Program r1.1"
+print "Encryption Test Program r2.0"
 print "by fabrizziop"
 print "MIT licence"
 what_to_do = int(raw_input("1: Encrypt, 2: Decrypt , 3: Change Password: "))
@@ -321,11 +417,14 @@ if what_to_do == 1:
     print "Methods:"
     print "1: SHA512 stream, transpose, SHA512 again, then XOR"
     print "2: SHA512 stream, transpose, append transposed SHA512 of plaintext chunk, SHA512 again, then XOR"
+    print "3: AES-256-CBC, key is SHA-256 of master key, IV is 100k rounds SHA-512-HMAC PKBDF2 of master key and SHA-512 of master key+salt"
     method = int(raw_input("Pick a method: "))
     if method == 1:
         print encrypt_file_1(fnm, mpas)
     elif method == 2:
         print encrypt_file_2(fnm, mpas)
+    elif method == 3:
+        print encrypt_file_3(fnm, mpas)
 elif what_to_do == 2:
     mpas = str(raw_input("Master Password: "))
     fnm = str(raw_input("File Name: "))
@@ -336,6 +435,9 @@ elif what_to_do == 2:
     elif dv == 2:
         print "Method: SHA512 stream, transpose, append transposed SHA512 of plaintext chunk, SHA512 again, then XOR"
         print decrypt_file_2(fnm, False, dmk, dl, dciv)
+    elif dv == 3:
+        print "3: AES-256-CBC, key is SHA-256 of master key, IV is 100k rounds SHA-512-HMAC PKBDF2 of master key and SHA-512 of master key+salt"
+        print decrypt_file_3(fnm, False, dmk, dl, dciv)
     else:
         print "FILE NOT COMPATIBLE"
 elif what_to_do == 3:
