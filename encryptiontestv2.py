@@ -130,8 +130,12 @@ def encrypt_file_1(filename, masterpassword):
     masterkey, uss = generate_header_file(masterpassword, file_length, filename, 1)
     file_padding = 128 - (file_length % 128)
     while file_padding > 0:
-        file_to_encrypt_hex += "0"
-        file_padding -= 1
+        if file_padding >= 2:
+            file_to_encrypt_hex += format(rng.randint(0,255), '02x')
+            file_padding -= 2
+        else:
+            file_to_encrypt_hex += "0"
+            file_padding -= 1
     file_checksum = hashlib.sha512(file_to_encrypt_hex[0:file_length]).hexdigest()
     file_to_encrypt_hex += file_checksum
     file_length = len(file_to_encrypt_hex)
@@ -218,8 +222,12 @@ def encrypt_file_2(filename, masterpassword):
     masterkey, iv = generate_header_file(masterpassword, file_length, filename, 2)
     file_padding = 128 - (file_length % 128)
     while file_padding > 0:
-        file_to_encrypt_hex += "0"
-        file_padding -= 1
+        if file_padding >= 2:
+            file_to_encrypt_hex += format(rng.randint(0,255), '02x')
+            file_padding -= 2
+        else:
+            file_to_encrypt_hex += "0"
+            file_padding -= 1
     file_checksum = hashlib.sha512(file_to_encrypt_hex[0:file_length]).hexdigest()
     file_to_encrypt_hex += file_checksum
     file_length = len(file_to_encrypt_hex)
@@ -299,7 +307,7 @@ def decrypt_file_2(filename, testmode, decryption_master_key, decryption_length,
         return "File decrypted, checksum OK"
     else:
         return "Wrong key, corrupted file or not a valid container"
-        
+
 what_to_do = int(raw_input("1: Encrypt, 2: Decrypt , 3: Change Password: "))
 if what_to_do == 1:
     mpas = str(raw_input("Master Password: "))
@@ -329,5 +337,3 @@ elif what_to_do == 3:
     npas = str(raw_input("New Password: "))
     fnm = str(raw_input("File Name: "))
     print edit_header_file(opas, npas, fnm)
-
-    
